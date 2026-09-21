@@ -35,6 +35,7 @@ from panda3d.core import (
     AsyncTask,
     DirectionalLight,
     Geom,
+    GeomLines,
     GeomNode,
     GeomTriangles,
     GeomVertexData,
@@ -142,7 +143,7 @@ def simplify_triangles(triangles: list[Triangle], target_count: int) -> list[Tri
 
     simplifier = pyfqmr.Simplify()
     simplifier.setMesh(vertices, faces)
-    simplifier.simplify_mesh(target_count=target_count, aggressiveness=7, verbose=False)
+    simplifier.simplify_mesh(target_count=target_count, aggressiveness=10, verbose=False)
     new_verts, new_faces, new_normals = simplifier.getMesh()
 
     result: list[Triangle] = []
@@ -218,6 +219,78 @@ def stl_to_geomnode(triangles: list[Triangle], name: str = "stl") -> GeomNode:
     return node
 
 
+def build_facet_outline_geomnode(triangles: list[Triangle], name: str = "outline") -> GeomNode:
+    """Build a GeomNode with only the perimeter edges of each flat face.
+
+    Uses trimesh to detect coplanar adjacent triangle groups (facets). Within
+    each group, edges shared by exactly one triangle are boundary edges and get
+    drawn; edges shared by two triangles are interior to the flat face and are
+    suppressed. Triangles not part of any facet group have all three edges drawn.
+    """
+    import trimesh
+
+    verts_list: list[Vec3] = []
+    index_of: dict[Vec3, int] = {}
+    faces_list: list[tuple[int, int, int]] = []
+
+    for _normal, verts in triangles:
+        face_idxs: list[int] = []
+        for v in verts:
+            if v not in index_of:
+                index_of[v] = len(verts_list)
+                verts_list.append(v)
+            face_idxs.append(index_of[v])
+        faces_list.append((face_idxs[0], face_idxs[1], face_idxs[2]))
+
+    vertices = np.array(verts_list, dtype=np.float64)
+    faces = np.array(faces_list, dtype=np.int32)
+
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+
+    outline_edges: set[tuple[int, int]] = set()
+    faces_in_facets: set[int] = set()
+
+    for face_indices in mesh.facets:
+        faces_in_facets.update(face_indices.tolist())
+        edge_count: dict[tuple[int, int], int] = {}
+        for fi in face_indices:
+            a, b, c = int(faces[fi][0]), int(faces[fi][1]), int(faces[fi][2])
+            for edge in (
+                (min(a, b), max(a, b)),
+                (min(b, c), max(b, c)),
+                (min(c, a), max(c, a)),
+            ):
+                edge_count[edge] = edge_count.get(edge, 0) + 1
+        for edge, count in edge_count.items():
+            if count == 1:
+                outline_edges.add(edge)
+
+    for fi, (a, b, c) in enumerate(faces):
+        if fi not in faces_in_facets:
+            a, b, c = int(a), int(b), int(c)
+            outline_edges.add((min(a, b), max(a, b)))
+            outline_edges.add((min(b, c), max(b, c)))
+            outline_edges.add((min(c, a), max(c, a)))
+
+    fmt = GeomVertexFormat.get_v3()
+    vdata = GeomVertexData(name, fmt, Geom.UH_static)
+    vdata.set_num_rows(len(verts_list))
+    vwriter = GeomVertexWriter(vdata, "vertex")
+    for pos in verts_list:
+        vwriter.add_data3(*pos)
+
+    prim = GeomLines(Geom.UH_static)
+    for a, b in outline_edges:
+        prim.add_vertices(a, b)
+    prim.close_primitive()
+
+    geom = Geom(vdata)
+    geom.add_primitive(prim)
+    node = GeomNode(name)
+    node.add_geom(geom)
+    return node
+
+
 # --------------------------------------------------------------------------- #
 # Application
 # --------------------------------------------------------------------------- #
@@ -264,19 +337,24 @@ class STLViewer(ShowBase):
 
         self._center_and_scale(self.model)
 
-        if wireframe:
-            self.model.set_render_mode_wireframe()
-            self.model.set_color(Vec4(*edge_color, 1))
-        else:
-            self._setup_lights()
-            self.model.set_color(Vec4(*color, 1))
-
         self.disable_mouse()
         self.camera.set_pos(0, -8, 1.5)
         self.camera.look_at(0, 0, 0)
 
         self.pivot = self.render.attach_new_node("pivot")
         self.model.reparent_to(self.pivot)
+
+        if wireframe:
+            outline_node = build_facet_outline_geomnode(triangles, name=stl_path + "_outline")
+            self.outline = self.render.attach_new_node(outline_node)
+            self._center_and_scale(self.outline)
+            self.outline.set_color(Vec4(*edge_color, 1))
+            self.outline.set_render_mode_thickness(2)
+            self.outline.reparent_to(self.pivot)
+            self.model.hide()
+        else:
+            self._setup_lights()
+            self.model.set_color(Vec4(*color, 1))
 
         if self._offline:
             self._output_path = output
