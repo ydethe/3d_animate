@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Load an STL file in Panda3D, spin it at a configurable speed, and render it
-with a cartoon (cel) shader plus ink outlines.
+Load an STL file in Panda3D, spin it at a configurable speed.
 
 Panda3D has no built-in STL loader, so this script parses STL (both the binary
 and ASCII variants) directly into a Panda3D Geom.
@@ -9,7 +8,8 @@ and ASCII variants) directly into a Panda3D Geom.
 Usage:
     python stl_cartoon.py model.stl
     python stl_cartoon.py model.stl --speed 90 --color e86430
-    python stl_cartoon.py model.stl --speed -45 --no-ink --levels 4
+    python stl_cartoon.py model.stl --wireframe --edge-color 000000
+    python stl_cartoon.py model.stl --bg-color 1a1a2e
     python stl_cartoon.py model.stl --output spin.webm --fps 60 --width 1280 --height 720
 
 Controls (interactive mode only):
@@ -26,9 +26,9 @@ import sys
 import tempfile
 from typing import Annotated, Optional
 
+import numpy as np
+import pyfqmr
 import typer
-
-from direct.filter.CommonFilters import CommonFilters
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import (
     AmbientLight,
@@ -40,7 +40,6 @@ from panda3d.core import (
     GeomVertexData,
     GeomVertexFormat,
     GeomVertexWriter,
-    LightRampAttrib,
     LVector3,
     NodePath,
     Vec4,
@@ -72,7 +71,6 @@ def _is_binary_stl(path: str) -> bool:
     expected_binary_size = 84 + tri_count * 50
     if size == expected_binary_size:
         return True
-    # Fall back to the leading-token check.
     return not header.lstrip()[:5].lower() == b"solid"
 
 
@@ -124,6 +122,41 @@ def load_stl(path: str) -> list[Triangle]:
     return _parse_ascii_stl(path)
 
 
+def simplify_triangles(triangles: list[Triangle], target_count: int) -> list[Triangle]:
+    """Reduce the mesh to *target_count* triangles using Fast Quadric Mesh Reduction."""
+    verts_list: list[Vec3] = []
+    index_of: dict[Vec3, int] = {}
+    faces_list: list[tuple[int, int, int]] = []
+
+    for _normal, verts in triangles:
+        face_indices: list[int] = []
+        for v in verts:
+            if v not in index_of:
+                index_of[v] = len(verts_list)
+                verts_list.append(v)
+            face_indices.append(index_of[v])
+        faces_list.append((face_indices[0], face_indices[1], face_indices[2]))
+
+    vertices = np.array(verts_list, dtype=np.float64)
+    faces = np.array(faces_list, dtype=np.uint32)
+
+    simplifier = pyfqmr.Simplify()
+    simplifier.setMesh(vertices, faces)
+    simplifier.simplify_mesh(target_count=target_count, aggressiveness=7, verbose=False)
+    new_verts, new_faces, new_normals = simplifier.getMesh()
+
+    result: list[Triangle] = []
+    for i, (a, b, c) in enumerate(new_faces):
+        n = tuple(float(x) for x in new_normals[i])
+        v = [
+            tuple(float(x) for x in new_verts[a]),
+            tuple(float(x) for x in new_verts[b]),
+            tuple(float(x) for x in new_verts[c]),
+        ]
+        result.append((n, v))  # type: ignore[arg-type]
+    return result
+
+
 def _face_normal(v0: Vec3, v1: Vec3, v2: Vec3) -> LVector3:
     a = LVector3(*v1) - LVector3(*v0)
     b = LVector3(*v2) - LVector3(*v0)
@@ -139,7 +172,6 @@ def stl_to_geomnode(triangles: list[Triangle], name: str = "stl") -> GeomNode:
     Vertex normals are accumulated per shared position so the model shades
     smoothly; positions are welded by exact coordinate match.
     """
-    # Weld identical vertices and accumulate smooth normals.
     index_of: dict[Vec3, int] = {}
     positions: list[Vec3] = []
     normals: list[LVector3] = []
@@ -195,27 +227,26 @@ class STLViewer(ShowBase):
         stl_path: str,
         speed: float,
         color: tuple[float, float, float],
-        levels: int,
-        ink: bool,
+        wireframe: bool,
+        edge_color: tuple[float, float, float],
+        bg_color: tuple[float, float, float, float],
         output: str | None = None,
         fps: int = 30,
         width: int = 1920,
         height: int = 1080,
+        target_count: int = 0,
     ) -> None:
         self._offline = output is not None
 
+        if bg_color[3] < 1.0 or self._offline:
+            loadPrcFileData("", "framebuffer-alpha true")
         if self._offline:
             loadPrcFileData("", "window-type offscreen")
-            loadPrcFileData("", "framebuffer-alpha true")
             loadPrcFileData("", f"win-size {width} {height}")
 
         super().__init__()
 
-        if self._offline:
-            self.set_background_color(0, 0, 0, 0)
-        else:
-            self.set_background_color(0.15, 0.16, 0.2, 1)
-
+        self.set_background_color(*bg_color)
         self.speed = speed
         self.paused = False
 
@@ -224,13 +255,21 @@ class STLViewer(ShowBase):
             sys.exit(f"No triangles found in {stl_path!r} — is it a valid STL?")
         print(f"Loaded {len(triangles)} triangles from {stl_path}")
 
+        if target_count > 0 and target_count < len(triangles):
+            triangles = simplify_triangles(triangles, target_count)
+            print(f"Simplified to {len(triangles)} triangles")
+
         node = stl_to_geomnode(triangles, name=stl_path)
         self.model = self.render.attach_new_node(node)
-        self.model.set_color(Vec4(*color, 1))
 
         self._center_and_scale(self.model)
-        self._setup_lights()
-        self._setup_cartoon_shading(levels, ink)
+
+        if wireframe:
+            self.model.set_render_mode_wireframe()
+            self.model.set_color(Vec4(*edge_color, 1))
+        else:
+            self._setup_lights()
+            self.model.set_color(Vec4(*color, 1))
 
         self.disable_mouse()
         self.camera.set_pos(0, -8, 1.5)
@@ -281,23 +320,6 @@ class STLViewer(ShowBase):
         ambient = AmbientLight("ambient")
         ambient.set_color(Vec4(0.25, 0.25, 0.3, 1))
         self.render.set_light(self.render.attach_new_node(ambient))
-
-    def _setup_cartoon_shading(self, levels: int, ink: bool) -> None:
-        """Apply cel shading (a stepped light ramp) and optional ink outlines."""
-        # Auto shader turns the fixed-function lights into a shader we can ramp.
-        self.render.set_shader_auto()
-
-        if levels <= 2:
-            ramp = LightRampAttrib.make_single_threshold(0.5, 0.6)
-        else:
-            ramp = LightRampAttrib.make_double_threshold(0.3, 0.65, 0.4, 0.8)
-        self.render.set_attrib(ramp)
-
-        if ink:
-            self.filters = CommonFilters(self.win, self.cam)
-            ok = self.filters.set_cartoon_ink(separation=1, color=(0.0, 0.0, 0.0, 1.0))
-            if not ok:
-                print("Warning: cartoon ink filter unavailable on this GPU.")
 
     # -- Interactive mode tasks and keys --
 
@@ -354,13 +376,10 @@ class STLViewer(ShowBase):
         frame_pattern = os.path.join(self._temp_dir, "frame_%06d.png")
 
         if ext == ".webm":
-            # VP9 supports RGBA — full transparency
             codec_args = ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "30"]
         elif ext == ".mov":
-            # ProRes 4444 supports RGBA — full transparency
             codec_args = ["-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le"]
         else:
-            # H.264 / generic: no alpha channel; composite against black
             if ext == ".mp4":
                 print(
                     "Note: H.264 inside MP4 does not support alpha."
@@ -384,7 +403,7 @@ class STLViewer(ShowBase):
         shutil.rmtree(self._temp_dir, ignore_errors=True)
 
 
-app = typer.Typer(help="Spin an STL model with a cartoon shader.")
+app = typer.Typer(help="Spin an STL model with optional wireframe rendering.")
 
 
 def _parse_hex_color(value: str) -> tuple[float, float, float]:
@@ -407,12 +426,17 @@ def main(
     color: Annotated[
         str, typer.Option(help="base RGB color as hex, e.g. ff0000 or #ff6600")
     ] = "ff0000",
-    levels: Annotated[
-        int, typer.Option(help="number of cel-shading bands (2 = hard, 3+ = softer)")
-    ] = 3,
-    ink: Annotated[
-        bool, typer.Option("--ink/--no-ink", help="enable or disable the black ink outline")
-    ] = True,
+    wireframe: Annotated[
+        bool,
+        typer.Option("--wireframe/--no-wireframe", help="render edges only with transparent faces"),
+    ] = False,
+    edge_color: Annotated[
+        str, typer.Option(help="edge color as hex when --wireframe is active, e.g. 000000")
+    ] = "000000",
+    bg_color: Annotated[
+        Optional[str],
+        typer.Option(help="background color as hex, e.g. 1a1a2e (default: transparent)"),
+    ] = None,
     output: Annotated[
         Optional[str],
         typer.Option(
@@ -425,16 +449,22 @@ def main(
     fps: Annotated[int, typer.Option(help="frames per second for video output")] = 30,
     width: Annotated[int, typer.Option(help="video width in pixels")] = 1920,
     height: Annotated[int, typer.Option(help="video height in pixels")] = 1080,
+    target_count: Annotated[
+        int, typer.Option(help="simplify mesh to this many triangles (0 = no simplification)")
+    ] = 0,
 ) -> None:
+    bg = (*_parse_hex_color(bg_color), 1.0) if bg_color else (0.0, 0.0, 0.0, 0.0)
     viewer = STLViewer(
         stl,
         speed,
         _parse_hex_color(color),
-        levels,
-        ink,
+        wireframe,
+        _parse_hex_color(edge_color),
+        bg,
         output=output,
         fps=fps,
         width=width,
         height=height,
+        target_count=target_count,
     )
     viewer.run()
