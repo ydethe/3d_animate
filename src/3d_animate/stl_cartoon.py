@@ -8,7 +8,7 @@ and ASCII variants) directly into a Panda3D Geom.
 
 Usage:
     python stl_cartoon.py model.stl
-    python stl_cartoon.py model.stl --speed 90 --color 0.9 0.4 0.3
+    python stl_cartoon.py model.stl --speed 90 --color e86430
     python stl_cartoon.py model.stl --speed -45 --no-ink --levels 4
 
 Controls:
@@ -17,9 +17,11 @@ Controls:
     escape   quit
 """
 
-import argparse
 import struct
 import sys
+from typing import Annotated
+
+import typer
 
 from direct.filter.CommonFilters import CommonFilters
 from direct.showbase.ShowBase import ShowBase
@@ -186,7 +188,7 @@ class STLViewer(ShowBase):
         self,
         stl_path: str,
         speed: float,
-        color: list[float],
+        color: tuple[float, float, float],
         levels: int,
         ink: bool,
     ) -> None:
@@ -241,7 +243,7 @@ class STLViewer(ShowBase):
         fill.set_color(Vec4(0.35, 0.4, 0.5, 1))
         fill_np = self.render.attach_new_node(fill)
         fill_np.set_hpr(150, -20, 0)
-        self.render.set_light(fblack.ill_np)
+        self.render.set_light(fill_np)
 
         ambient = AmbientLight("ambient")
         ambient.set_color(Vec4(0.25, 0.25, 0.3, 1))
@@ -260,7 +262,7 @@ class STLViewer(ShowBase):
 
         if ink:
             self.filters = CommonFilters(self.win, self.cam)
-            ok = self.filters.set_cartoon_ink(separation=1.2)
+            ok = self.filters.set_cartoon_ink(separation=1, color=(0.0, 0.0, 0.0, 1.0))
             if not ok:
                 print("Warning: cartoon ink filter unavailable on this GPU.")
 
@@ -290,37 +292,35 @@ class STLViewer(ShowBase):
         print(f"Rotation speed: {self.speed:.0f} deg/s")
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Spin an STL model with a cartoon shader.")
-    p.add_argument("stl", help="path to the .stl file")
-    p.add_argument(
-        "--speed",
-        type=float,
-        default=45.0,
-        help="rotation speed in degrees/second (negative reverses)",
-    )
-    p.add_argument(
-        "--color",
-        type=float,
-        nargs=3,
-        metavar=("R", "G", "B"),
-        default=[0.85, 0.55, 0.35],
-        help="base RGB color, each 0..1 (default warm orange)",
-    )
-    p.add_argument(
-        "--levels", type=int, default=3, help="number of cel-shading bands (2 = hard, 3+ = softer)"
-    )
-    p.add_argument(
-        "--no-ink", dest="ink", action="store_false", help="disable the black ink outline"
-    )
-    return p.parse_args(argv)
+app = typer.Typer(help="Spin an STL model with a cartoon shader.")
 
 
-def main() -> None:
-    args = parse_args()
-    app = STLViewer(args.stl, args.speed, args.color, args.levels, args.ink)
-    app.run()
+def _parse_hex_color(value: str) -> tuple[float, float, float]:
+    hex_str = value.lstrip("#")
+    if len(hex_str) != 6:
+        raise typer.BadParameter("Color must be a 6-digit hex string, e.g. ff6600 or #ff6600")
+    try:
+        r, g, b = int(hex_str[0:2], 16), int(hex_str[2:4], 16), int(hex_str[4:6], 16)
+    except ValueError:
+        raise typer.BadParameter("Invalid hex color: " + value)
+    return r / 255.0, g / 255.0, b / 255.0
 
 
-if __name__ == "__main__":
-    main()
+@app.command()
+def main(
+    stl: Annotated[str, typer.Argument(help="path to the .stl file")],
+    speed: Annotated[
+        float, typer.Option(help="rotation speed in degrees/second (negative reverses)")
+    ] = 45.0,
+    color: Annotated[
+        str, typer.Option(help="base RGB color as hex, e.g. ff0000 or #ff6600")
+    ] = "ff0000",
+    levels: Annotated[
+        int, typer.Option(help="number of cel-shading bands (2 = hard, 3+ = softer)")
+    ] = 3,
+    ink: Annotated[
+        bool, typer.Option("--ink/--no-ink", help="enable or disable the black ink outline")
+    ] = True,
+) -> None:
+    viewer = STLViewer(stl, speed, _parse_hex_color(color), levels, ink)
+    viewer.run()
