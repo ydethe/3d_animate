@@ -10,16 +10,21 @@ Usage:
     python stl_cartoon.py model.stl
     python stl_cartoon.py model.stl --speed 90 --color e86430
     python stl_cartoon.py model.stl --speed -45 --no-ink --levels 4
+    python stl_cartoon.py model.stl --output spin.webm --fps 60 --width 1280 --height 720
 
-Controls:
+Controls (interactive mode only):
     +/-      speed up / slow down the rotation
     space    pause / resume
     escape   quit
 """
 
+import os
+import shutil
 import struct
+import subprocess
 import sys
-from typing import Annotated
+import tempfile
+from typing import Annotated, Optional
 
 import typer
 
@@ -39,6 +44,7 @@ from panda3d.core import (
     LVector3,
     NodePath,
     Vec4,
+    loadPrcFileData,
 )
 
 Vec3 = tuple[float, float, float]
@@ -191,11 +197,26 @@ class STLViewer(ShowBase):
         color: tuple[float, float, float],
         levels: int,
         ink: bool,
+        output: str | None = None,
+        fps: int = 30,
+        width: int = 1920,
+        height: int = 1080,
     ) -> None:
+        self._offline = output is not None
+
+        if self._offline:
+            loadPrcFileData("", "window-type offscreen")
+            loadPrcFileData("", "framebuffer-alpha true")
+            loadPrcFileData("", f"win-size {width} {height}")
+
         super().__init__()
 
-        self.set_background_color(0.15, 0.16, 0.2, 1)
-        self.speed = speed  # degrees per second
+        if self._offline:
+            self.set_background_color(0, 0, 0, 0)
+        else:
+            self.set_background_color(0.15, 0.16, 0.2, 1)
+
+        self.speed = speed
         self.paused = False
 
         triangles = load_stl(stl_path)
@@ -211,7 +232,6 @@ class STLViewer(ShowBase):
         self._setup_lights()
         self._setup_cartoon_shading(levels, ink)
 
-        # Frame the model with the camera.
         self.disable_mouse()
         self.camera.set_pos(0, -8, 1.5)
         self.camera.look_at(0, 0, 0)
@@ -219,9 +239,22 @@ class STLViewer(ShowBase):
         self.pivot = self.render.attach_new_node("pivot")
         self.model.reparent_to(self.pivot)
 
-        self.taskMgr.add(self._spin_task, "spin")
-        self._setup_keys()
-        self._print_help()
+        if self._offline:
+            self._output_path = output
+            self._fps = fps
+            duration = 360.0 / abs(speed)
+            self._total_frames = max(1, int(round(duration * fps)))
+            self._frame_idx = 0
+            self._temp_dir = tempfile.mkdtemp(prefix="stl_video_")
+            print(
+                f"Rendering {self._total_frames} frames at {fps} fps"
+                f" ({duration:.2f}s for 360°)…"
+            )
+            self.taskMgr.add(self._capture_task, "capture")
+        else:
+            self.taskMgr.add(self._spin_task, "spin")
+            self._setup_keys()
+            self._print_help()
 
     def _center_and_scale(self, np: NodePath) -> None:
         """Recenter the model on the origin and scale it to a unit-ish size."""
@@ -266,6 +299,8 @@ class STLViewer(ShowBase):
             if not ok:
                 print("Warning: cartoon ink filter unavailable on this GPU.")
 
+    # -- Interactive mode tasks and keys --
+
     def _spin_task(self, task: AsyncTask) -> int:
         if not self.paused:
             dt = self.clock.get_dt()
@@ -290,6 +325,63 @@ class STLViewer(ShowBase):
     def _print_help(self) -> None:
         print("Controls:  +/-  speed    space  pause    esc  quit")
         print(f"Rotation speed: {self.speed:.0f} deg/s")
+
+    # -- Offscreen video capture --
+
+    def _capture_task(self, task: AsyncTask) -> int:
+        if self._frame_idx >= self._total_frames:
+            print()  # newline after progress line
+            self._encode_video()
+            sys.exit(0)
+
+        angle = self._frame_idx * self.speed * (1.0 / self._fps)
+        self.pivot.set_h(angle)
+
+        self.graphicsEngine.render_frame()
+        frame_path = os.path.join(self._temp_dir, f"frame_{self._frame_idx:06d}.png")
+        self.win.save_screenshot(frame_path)
+
+        self._frame_idx += 1
+        print(
+            f"\rFrame {self._frame_idx}/{self._total_frames}",
+            end="",
+            flush=True,
+        )
+        return task.cont
+
+    def _encode_video(self) -> None:
+        ext = os.path.splitext(self._output_path)[1].lower()
+        frame_pattern = os.path.join(self._temp_dir, "frame_%06d.png")
+
+        if ext == ".webm":
+            # VP9 supports RGBA — full transparency
+            codec_args = ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "30"]
+        elif ext == ".mov":
+            # ProRes 4444 supports RGBA — full transparency
+            codec_args = ["-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le"]
+        else:
+            # H.264 / generic: no alpha channel; composite against black
+            if ext == ".mp4":
+                print(
+                    "Note: H.264 inside MP4 does not support alpha."
+                    " Use .webm or .mov for a transparent output."
+                )
+            codec_args = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18"]
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-framerate",
+            str(self._fps),
+            "-i",
+            frame_pattern,
+            *codec_args,
+            self._output_path,
+        ]
+        print(f"Encoding: {' '.join(cmd)}")
+        subprocess.run(cmd, check=True)
+        print(f"Saved: {self._output_path!r}")
+        shutil.rmtree(self._temp_dir, ignore_errors=True)
 
 
 app = typer.Typer(help="Spin an STL model with a cartoon shader.")
@@ -321,6 +413,28 @@ def main(
     ink: Annotated[
         bool, typer.Option("--ink/--no-ink", help="enable or disable the black ink outline")
     ] = True,
+    output: Annotated[
+        Optional[str],
+        typer.Option(
+            help=(
+                "render a full 360° rotation to this video file and exit"
+                " (.webm/.mov = transparent background, .mp4 = opaque)"
+            )
+        ),
+    ] = None,
+    fps: Annotated[int, typer.Option(help="frames per second for video output")] = 30,
+    width: Annotated[int, typer.Option(help="video width in pixels")] = 1920,
+    height: Annotated[int, typer.Option(help="video height in pixels")] = 1080,
 ) -> None:
-    viewer = STLViewer(stl, speed, _parse_hex_color(color), levels, ink)
+    viewer = STLViewer(
+        stl,
+        speed,
+        _parse_hex_color(color),
+        levels,
+        ink,
+        output=output,
+        fps=fps,
+        width=width,
+        height=height,
+    )
     viewer.run()

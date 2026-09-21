@@ -15,6 +15,8 @@ testfile.bin
 .*
 *.mmdb
 *.stl
+*.mov
+*.mp4
 
 # Test binary, built with `go test -c`
 *.test
