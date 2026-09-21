@@ -21,9 +21,11 @@ import argparse
 import struct
 import sys
 
+from direct.filter.CommonFilters import CommonFilters
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import (
     AmbientLight,
+    AsyncTask,
     DirectionalLight,
     Geom,
     GeomNode,
@@ -33,16 +35,18 @@ from panda3d.core import (
     GeomVertexWriter,
     LightRampAttrib,
     LVector3,
-    Vec3,
+    NodePath,
     Vec4,
 )
-from direct.filter.CommonFilters import CommonFilters
+
+Vec3 = tuple[float, float, float]
+Triangle = tuple[Vec3, list[Vec3]]
 
 
 # --------------------------------------------------------------------------- #
 # STL parsing
 # --------------------------------------------------------------------------- #
-def _is_binary_stl(path):
+def _is_binary_stl(path: str) -> bool:
     """Heuristically decide whether an STL file is binary or ASCII.
 
     ASCII files begin with the token ``solid``, but so can some binary files,
@@ -64,8 +68,8 @@ def _is_binary_stl(path):
     return not header.lstrip()[:5].lower() == b"solid"
 
 
-def _parse_binary_stl(path):
-    triangles = []
+def _parse_binary_stl(path: str) -> list[Triangle]:
+    triangles: list[Triangle] = []
     with open(path, "rb") as fh:
         fh.read(80)  # skip header
         (tri_count,) = struct.unpack("<I", fh.read(4))
@@ -75,7 +79,7 @@ def _parse_binary_stl(path):
                 break
             nx, ny, nz = struct.unpack("<3f", data[0:12])
             verts = struct.unpack("<9f", data[12:48])
-            v = [
+            v: list[Vec3] = [
                 (verts[0], verts[1], verts[2]),
                 (verts[3], verts[4], verts[5]),
                 (verts[6], verts[7], verts[8]),
@@ -84,10 +88,10 @@ def _parse_binary_stl(path):
     return triangles
 
 
-def _parse_ascii_stl(path):
-    triangles = []
-    normal = (0.0, 0.0, 0.0)
-    verts = []
+def _parse_ascii_stl(path: str) -> list[Triangle]:
+    triangles: list[Triangle] = []
+    normal: Vec3 = (0.0, 0.0, 0.0)
+    verts: list[Vec3] = []
     with open(path, "r", errors="replace") as fh:
         for line in fh:
             parts = line.split()
@@ -105,14 +109,14 @@ def _parse_ascii_stl(path):
     return triangles
 
 
-def load_stl(path):
+def load_stl(path: str) -> list[Triangle]:
     """Read an STL file and return a list of (normal, [v0, v1, v2]) triangles."""
     if _is_binary_stl(path):
         return _parse_binary_stl(path)
     return _parse_ascii_stl(path)
 
 
-def _face_normal(v0, v1, v2):
+def _face_normal(v0: Vec3, v1: Vec3, v2: Vec3) -> LVector3:
     a = LVector3(*v1) - LVector3(*v0)
     b = LVector3(*v2) - LVector3(*v0)
     n = a.cross(b)
@@ -121,23 +125,23 @@ def _face_normal(v0, v1, v2):
     return n
 
 
-def stl_to_geomnode(triangles, name="stl"):
+def stl_to_geomnode(triangles: list[Triangle], name: str = "stl") -> GeomNode:
     """Convert parsed STL triangles into a Panda3D GeomNode with normals.
 
     Vertex normals are accumulated per shared position so the model shades
     smoothly; positions are welded by exact coordinate match.
     """
     # Weld identical vertices and accumulate smooth normals.
-    index_of = {}
-    positions = []
-    normals = []
-    faces = []
+    index_of: dict[Vec3, int] = {}
+    positions: list[Vec3] = []
+    normals: list[LVector3] = []
+    faces: list[list[int]] = []
 
     for tri_normal, verts in triangles:
         n = LVector3(*tri_normal)
         if n.length_squared() == 0:
             n = _face_normal(*verts)
-        face = []
+        face: list[int] = []
         for vp in verts:
             idx = index_of.get(vp)
             if idx is None:
@@ -178,7 +182,14 @@ def stl_to_geomnode(triangles, name="stl"):
 # Application
 # --------------------------------------------------------------------------- #
 class STLViewer(ShowBase):
-    def __init__(self, stl_path, speed, color, levels, ink):
+    def __init__(
+        self,
+        stl_path: str,
+        speed: float,
+        color: list[float],
+        levels: int,
+        ink: bool,
+    ) -> None:
         super().__init__()
 
         self.set_background_color(0.15, 0.16, 0.2, 1)
@@ -210,7 +221,7 @@ class STLViewer(ShowBase):
         self._setup_keys()
         self._print_help()
 
-    def _center_and_scale(self, np):
+    def _center_and_scale(self, np: NodePath) -> None:
         """Recenter the model on the origin and scale it to a unit-ish size."""
         min_b, max_b = np.get_tight_bounds()
         center = (min_b + max_b) * 0.5
@@ -219,7 +230,7 @@ class STLViewer(ShowBase):
         np.set_scale(3.0 / largest)
         np.set_pos(-center * (3.0 / largest))
 
-    def _setup_lights(self):
+    def _setup_lights(self) -> None:
         key = DirectionalLight("key")
         key.set_color(Vec4(1.0, 0.98, 0.9, 1))
         key_np = self.render.attach_new_node(key)
@@ -230,13 +241,13 @@ class STLViewer(ShowBase):
         fill.set_color(Vec4(0.35, 0.4, 0.5, 1))
         fill_np = self.render.attach_new_node(fill)
         fill_np.set_hpr(150, -20, 0)
-        self.render.set_light(fill_np)
+        self.render.set_light(fblack.ill_np)
 
         ambient = AmbientLight("ambient")
         ambient.set_color(Vec4(0.25, 0.25, 0.3, 1))
         self.render.set_light(self.render.attach_new_node(ambient))
 
-    def _setup_cartoon_shading(self, levels, ink):
+    def _setup_cartoon_shading(self, levels: int, ink: bool) -> None:
         """Apply cel shading (a stepped light ramp) and optional ink outlines."""
         # Auto shader turns the fixed-function lights into a shader we can ramp.
         self.render.set_shader_auto()
@@ -253,33 +264,33 @@ class STLViewer(ShowBase):
             if not ok:
                 print("Warning: cartoon ink filter unavailable on this GPU.")
 
-    def _spin_task(self, task):
+    def _spin_task(self, task: AsyncTask) -> int:
         if not self.paused:
             dt = self.clock.get_dt()
             self.pivot.set_h(self.pivot.get_h() + self.speed * dt)
         return task.cont
 
-    def _setup_keys(self):
+    def _setup_keys(self) -> None:
         self.accept("escape", sys.exit)
         self.accept("space", self._toggle_pause)
         self.accept("+", self._change_speed, [15])
         self.accept("=", self._change_speed, [15])  # unshifted +
         self.accept("-", self._change_speed, [-15])
 
-    def _toggle_pause(self):
+    def _toggle_pause(self) -> None:
         self.paused = not self.paused
         print("Paused" if self.paused else "Resumed")
 
-    def _change_speed(self, delta):
+    def _change_speed(self, delta: float) -> None:
         self.speed += delta
         print(f"Speed: {self.speed:.0f} deg/s")
 
-    def _print_help(self):
+    def _print_help(self) -> None:
         print("Controls:  +/-  speed    space  pause    esc  quit")
         print(f"Rotation speed: {self.speed:.0f} deg/s")
 
 
-def parse_args(argv=None):
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Spin an STL model with a cartoon shader.")
     p.add_argument("stl", help="path to the .stl file")
     p.add_argument(
@@ -305,7 +316,7 @@ def parse_args(argv=None):
     return p.parse_args(argv)
 
 
-def main():
+def main() -> None:
     args = parse_args()
     app = STLViewer(args.stl, args.speed, args.color, args.levels, args.ink)
     app.run()
