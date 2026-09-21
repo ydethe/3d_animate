@@ -75,9 +75,11 @@ def _parse_binary_stl(path):
                 break
             nx, ny, nz = struct.unpack("<3f", data[0:12])
             verts = struct.unpack("<9f", data[12:48])
-            v = [(verts[0], verts[1], verts[2]),
-                 (verts[3], verts[4], verts[5]),
-                 (verts[6], verts[7], verts[8])]
+            v = [
+                (verts[0], verts[1], verts[2]),
+                (verts[3], verts[4], verts[5]),
+                (verts[6], verts[7], verts[8]),
+            ]
             triangles.append(((nx, ny, nz), v))
     return triangles
 
@@ -180,7 +182,7 @@ class STLViewer(ShowBase):
         super().__init__()
 
         self.set_background_color(0.15, 0.16, 0.2, 1)
-        self.speed = speed          # degrees per second
+        self.speed = speed  # degrees per second
         self.paused = False
 
         triangles = load_stl(stl_path)
@@ -261,7 +263,7 @@ class STLViewer(ShowBase):
         self.accept("escape", sys.exit)
         self.accept("space", self._toggle_pause)
         self.accept("+", self._change_speed, [15])
-        self.accept("=", self._change_speed, [15])   # unshifted +
+        self.accept("=", self._change_speed, [15])  # unshifted +
         self.accept("-", self._change_speed, [-15])
 
     def _toggle_pause(self):
@@ -280,15 +282,26 @@ class STLViewer(ShowBase):
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description="Spin an STL model with a cartoon shader.")
     p.add_argument("stl", help="path to the .stl file")
-    p.add_argument("--speed", type=float, default=45.0,
-                   help="rotation speed in degrees/second (negative reverses)")
-    p.add_argument("--color", type=float, nargs=3, metavar=("R", "G", "B"),
-                   default=[0.85, 0.55, 0.35],
-                   help="base RGB color, each 0..1 (default warm orange)")
-    p.add_argument("--levels", type=int, default=3,
-                   help="number of cel-shading bands (2 = hard, 3+ = softer)")
-    p.add_argument("--no-ink", dest="ink", action="store_false",
-                   help="disable the black ink outline")
+    p.add_argument(
+        "--speed",
+        type=float,
+        default=45.0,
+        help="rotation speed in degrees/second (negative reverses)",
+    )
+    p.add_argument(
+        "--color",
+        type=float,
+        nargs=3,
+        metavar=("R", "G", "B"),
+        default=[0.85, 0.55, 0.35],
+        help="base RGB color, each 0..1 (default warm orange)",
+    )
+    p.add_argument(
+        "--levels", type=int, default=3, help="number of cel-shading bands (2 = hard, 3+ = softer)"
+    )
+    p.add_argument(
+        "--no-ink", dest="ink", action="store_false", help="disable the black ink outline"
+    )
     return p.parse_args(argv)
 
 
