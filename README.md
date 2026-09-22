@@ -1,0 +1,101 @@
+# 3d_animate
+
+Spin an STL model in a 3D viewer and optionally render a full 360° rotation to video.
+
+Built on [Panda3D](https://www.panda3d.org/) with a custom STL parser (no external loader required).
+
+## Features
+
+- Loads binary and ASCII STL files
+- Interactive viewer with keyboard controls
+- Wireframe / outline mode (facet-aware edge detection via trimesh)
+- Mesh simplification via Fast Quadric Mesh Reduction (`pyfqmr`)
+- Offscreen video export: `.webm` (transparent), `.mov` (transparent), `.mp4` (opaque)
+- Configurable rotation speed, model color, edge color, and background color
+
+## Requirements
+
+- Python ≥ 3.12
+- [ffmpeg](https://ffmpeg.org/) in `PATH` (required for video export only)
+
+## Installation
+
+```bash
+pip install 3d_animate
+```
+
+Or from source with [PDM](https://pdm-project.org/):
+
+```bash
+pdm install
+```
+
+## Usage
+
+```
+python -m 3d_animate <model.stl> [OPTIONS]
+```
+
+### Interactive mode
+
+```bash
+# Basic viewer
+python -m 3d_animate model.stl
+
+# Custom speed and color
+python -m 3d_animate model.stl --speed 90 --color e86430
+
+# Wireframe with custom edge color
+python -m 3d_animate model.stl --wireframe --edge-color 000000
+
+# Dark background
+python -m 3d_animate model.stl --bg-color 1a1a2e
+```
+
+**Keyboard controls (interactive mode only):**
+
+| Key | Action |
+|-----|--------|
+| `+` / `-` | Speed up / slow down rotation |
+| `Space` | Pause / resume |
+| `Escape` | Quit |
+
+### Video export
+
+```bash
+# Transparent WebM (VP9)
+python -m 3d_animate model.stl --output spin.webm
+
+# Transparent MOV (ProRes 4444)
+python -m 3d_animate model.stl --output spin.mov --fps 60 --width 1280 --height 720
+
+# Opaque MP4 (H.264)
+python -m 3d_animate model.stl --output spin.mp4
+```
+
+### Mesh simplification
+
+```bash
+# Reduce to 5 000 triangles before rendering
+python -m 3d_animate model.stl --target-count 5000
+```
+
+### All options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `stl` | *(required)* | Path to the `.stl` file |
+| `--speed` | `45.0` | Rotation speed in degrees/second (negative reverses) |
+| `--color` | `ff0000` | Model RGB color as hex (`ff6600` or `#ff6600`) |
+| `--wireframe` / `--no-wireframe` | off | Render edges only with transparent faces |
+| `--edge-color` | `000000` | Edge color as hex (wireframe mode) |
+| `--bg-color` | transparent | Background color as hex |
+| `--output` | *(none)* | Render 360° to this video file and exit |
+| `--fps` | `30` | Frames per second for video output |
+| `--width` | `1920` | Video width in pixels |
+| `--height` | `1080` | Video height in pixels |
+| `--target-count` | `0` | Simplify mesh to this many triangles (`0` = off) |
+
+## License
+
+See [LICENSE](LICENSE).
