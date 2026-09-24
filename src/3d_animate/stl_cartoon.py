@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Load a 3D model in Panda3D, spin it at a configurable speed.
 
@@ -31,7 +30,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import numpy as np
 import pyfqmr
@@ -79,7 +78,7 @@ def _is_binary_stl(path: Path) -> bool:
     expected_binary_size = 84 + tri_count * 50
     if size == expected_binary_size:
         return True
-    return not header.lstrip()[:5].lower() == b"solid"
+    return header.lstrip()[:5].lower() != b"solid"
 
 
 def _parse_binary_stl(path: Path) -> list[Triangle]:
@@ -148,7 +147,7 @@ def simplify_triangles(triangles: list[Triangle], target_count: int) -> list[Tri
     vertices = np.array(verts_list, dtype=np.float64)
     faces = np.array(faces_list, dtype=np.uint32)
 
-    simplifier = pyfqmr.Simplify()
+    simplifier = pyfqmr.Simplify()  # type: ignore
     simplifier.setMesh(vertices, faces)
     simplifier.simplify_mesh(target_count=target_count, aggressiveness=10, verbose=False)
     new_verts, new_faces, new_normals = simplifier.getMesh()
@@ -317,7 +316,7 @@ def load_panda_model(loader, path: Path) -> NodePath:
         try:
             import gltf
 
-            gltf.patch_loader(loader)
+            gltf.patch_loader(loader)  # type: ignore
         except ImportError:
             sys.exit(
                 f"Loading {suffix} files needs the optional 'panda3d-gltf' package.\n"
@@ -403,8 +402,8 @@ class STLViewer(ShowBase):
         self._center_and_scale(self.model)
 
         self.disable_mouse()
-        self.camera.set_pos(0, -8, 1.5)
-        self.camera.look_at(0, 0, 0)
+        self.camera.set_pos(0, -8, 1.5)  # type: ignore
+        self.camera.look_at(0, 0, 0)  # type: ignore
 
         self.pivot = self.render.attach_new_node("pivot")
         self.model.reparent_to(self.pivot)
@@ -432,7 +431,7 @@ class STLViewer(ShowBase):
             self._output_path = output
             self._fps = fps
             duration = 360.0 / abs(speed)
-            self._total_frames = max(1, int(round(duration * fps)))
+            self._total_frames = max(1, round(duration * fps))
             self._frame_idx = 0
             self._temp_dir = tempfile.mkdtemp(prefix="stl_video_")
             print(
@@ -511,7 +510,7 @@ class STLViewer(ShowBase):
 
         self.graphicsEngine.render_frame()
         frame_path = os.path.join(self._temp_dir, f"frame_{self._frame_idx:06d}.png")
-        self.win.save_screenshot(frame_path)
+        self.win.save_screenshot(frame_path)  # type: ignore
 
         self._frame_idx += 1
         print(
@@ -522,7 +521,7 @@ class STLViewer(ShowBase):
         return task.cont
 
     def _encode_video(self) -> None:
-        ext = os.path.splitext(self._output_path)[1].lower()
+        ext = os.path.splitext(self._output_path)[1].lower()  # type: ignore
         frame_pattern = os.path.join(self._temp_dir, "frame_%06d.png")
 
         if ext == ".webm":
@@ -589,11 +588,11 @@ def main(
         str, typer.Option(help="edge color as hex when --wireframe is active, e.g. 000000")
     ] = "000000",
     bg_color: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="background color as hex, e.g. 1a1a2e (default: transparent)"),
     ] = None,
     output: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help=(
                 "render a full 360° rotation to this video file and exit"
