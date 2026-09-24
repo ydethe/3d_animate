@@ -1,14 +1,18 @@
 # 3d_animate
 
-Spin an STL model in a 3D viewer and optionally render a full 360° rotation to video.
+Spin a 3D model in a viewer and optionally render a full 360° rotation to video.
 
-Built on [Panda3D](https://www.panda3d.org/) with a custom STL parser (no external loader required).
+Built on [Panda3D](https://www.panda3d.org/) with a custom STL parser and Panda3D's
+native loaders for everything else.
 
 ## Features
 
-- Loads binary and ASCII STL files
+- Loads binary and ASCII STL files (custom parser)
+- Loads other formats through Panda3D: `.egg`/`.bam` natively, `.obj`/`.dae`/`.fbx`/`.ply`/`.3ds`
+  via the bundled Assimp plugin, and `.gltf`/`.glb` via `panda3d-gltf`
+- Loads referenced/embedded textures automatically (resolved next to the model file)
 - Interactive viewer with keyboard controls
-- Wireframe / outline mode (facet-aware edge detection via trimesh)
+- Wireframe / outline mode (facet-aware edge detection via trimesh; STL only)
 - Mesh simplification via Fast Quadric Mesh Reduction (`pyfqmr`)
 - Offscreen video export: `.webm` (transparent), `.mov` (transparent), `.mp4` (opaque)
 - Configurable rotation speed, model color, edge color, and background color

@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-Load an STL file in Panda3D, spin it at a configurable speed.
+Load a 3D model in Panda3D, spin it at a configurable speed.
 
 Panda3D has no built-in STL loader, so this script parses STL (both the binary
-and ASCII variants) directly into a Panda3D Geom.
+and ASCII variants) directly into a Panda3D Geom. Every other format is handed
+to Panda3D's own loader: ``.egg`` and ``.bam`` load natively, and common
+formats such as ``.obj``, ``.dae``, ``.fbx``, ``.ply`` and ``.3ds`` load through
+the bundled Assimp plugin. glTF (``.gltf`` / ``.glb``) works when the optional
+``panda3d-gltf`` package is installed. Any textures the model references are
+resolved relative to the model's own directory and loaded automatically.
 
 Usage:
     python stl_cartoon.py model.stl
-    python stl_cartoon.py model.stl --speed 90 --color e86430
+    python stl_cartoon.py model.glb
+    python stl_cartoon.py model.obj --speed 90 --color e86430
     python stl_cartoon.py model.stl --wireframe --edge-color 000000
     python stl_cartoon.py model.stl --bg-color 1a1a2e
     python stl_cartoon.py model.stl --output spin.webm --fps 60 --width 1280 --height 720
@@ -19,6 +25,7 @@ Controls (interactive mode only):
 """
 
 import os
+from pathlib import Path
 import shutil
 import struct
 import subprocess
@@ -54,7 +61,7 @@ Triangle = tuple[Vec3, list[Vec3]]
 # --------------------------------------------------------------------------- #
 # STL parsing
 # --------------------------------------------------------------------------- #
-def _is_binary_stl(path: str) -> bool:
+def _is_binary_stl(path: Path) -> bool:
     """Heuristically decide whether an STL file is binary or ASCII.
 
     ASCII files begin with the token ``solid``, but so can some binary files,
@@ -75,7 +82,7 @@ def _is_binary_stl(path: str) -> bool:
     return not header.lstrip()[:5].lower() == b"solid"
 
 
-def _parse_binary_stl(path: str) -> list[Triangle]:
+def _parse_binary_stl(path: Path) -> list[Triangle]:
     triangles: list[Triangle] = []
     with open(path, "rb") as fh:
         fh.read(80)  # skip header
@@ -95,7 +102,7 @@ def _parse_binary_stl(path: str) -> list[Triangle]:
     return triangles
 
 
-def _parse_ascii_stl(path: str) -> list[Triangle]:
+def _parse_ascii_stl(path: Path) -> list[Triangle]:
     triangles: list[Triangle] = []
     normal: Vec3 = (0.0, 0.0, 0.0)
     verts: list[Vec3] = []
@@ -116,7 +123,7 @@ def _parse_ascii_stl(path: str) -> list[Triangle]:
     return triangles
 
 
-def load_stl(path: str) -> list[Triangle]:
+def load_stl(path: Path) -> list[Triangle]:
     """Read an STL file and return a list of (normal, [v0, v1, v2]) triangles."""
     if _is_binary_stl(path):
         return _parse_binary_stl(path)
@@ -292,12 +299,56 @@ def build_facet_outline_geomnode(triangles: list[Triangle], name: str = "outline
 
 
 # --------------------------------------------------------------------------- #
+# Panda3D native loading (non-STL formats)
+# --------------------------------------------------------------------------- #
+def load_panda_model(loader, path: Path) -> NodePath:
+    """Load a non-STL 3D file with Panda3D's own loader.
+
+    Panda3D loads ``.egg`` and ``.bam`` natively and, through the bundled Assimp
+    plugin, common formats such as ``.obj``, ``.dae``, ``.fbx``, ``.ply`` and
+    ``.3ds``. glTF (``.gltf`` / ``.glb``) is handled when the optional
+    ``panda3d-gltf`` package is installed. Textures referenced by the model are
+    resolved relative to the model's own directory and loaded automatically.
+    """
+    from panda3d.core import Filename, get_model_path
+
+    suffix = path.suffix.lower()
+    if suffix in (".gltf", ".glb"):
+        try:
+            import gltf
+
+            gltf.patch_loader(loader)
+        except ImportError:
+            sys.exit(
+                f"Loading {suffix} files needs the optional 'panda3d-gltf' package.\n"
+                "    pip install panda3d-gltf"
+            )
+
+    # Resolve relative texture paths against the model's own directory.
+    model_dir = Filename.from_os_specific(str(path.parent.resolve()))
+    get_model_path().append_directory(model_dir)
+
+    panda_path = Filename.from_os_specific(str(path.resolve()))
+    model = loader.load_model(panda_path, noCache=True, okMissing=True)
+    if model is None or model.is_empty():
+        sys.exit(f"Panda3D could not load {str(path)!r} — unsupported or corrupt file?")
+
+    textures = model.find_all_textures()
+    if textures:
+        names = ", ".join(t.get_name() or "<unnamed>" for t in textures)
+        print(f"Loaded {textures.get_num_textures()} texture(s) from {path}: {names}")
+    else:
+        print(f"No embedded textures found in {path}")
+    return model
+
+
+# --------------------------------------------------------------------------- #
 # Application
 # --------------------------------------------------------------------------- #
 class STLViewer(ShowBase):
     def __init__(
         self,
-        stl_path: str,
+        stl_path: Path,
         speed: float,
         color: tuple[float, float, float],
         wireframe: bool,
@@ -323,17 +374,31 @@ class STLViewer(ShowBase):
         self.speed = speed
         self.paused = False
 
-        triangles = load_stl(stl_path)
-        if not triangles:
-            sys.exit(f"No triangles found in {stl_path!r} — is it a valid STL?")
-        print(f"Loaded {len(triangles)} triangles from {stl_path}")
+        # STL has no Panda3D loader, so parse it ourselves. Every other format
+        # goes through Panda3D's loader (Assimp / egg / bam / glTF), which also
+        # pulls in any referenced textures.
+        is_stl = stl_path.suffix.lower() == ".stl"
+        triangles: list[Triangle] | None = None
+        has_texture = False
 
-        if target_count > 0 and target_count < len(triangles):
-            triangles = simplify_triangles(triangles, target_count)
-            print(f"Simplified to {len(triangles)} triangles")
+        if is_stl:
+            triangles = load_stl(stl_path)
+            if not triangles:
+                sys.exit(f"No triangles found in {stl_path!r} — is it a valid STL?")
+            print(f"Loaded {len(triangles)} triangles from {stl_path}")
 
-        node = stl_to_geomnode(triangles, name=stl_path)
-        self.model = self.render.attach_new_node(node)
+            if target_count > 0 and target_count < len(triangles):
+                triangles = simplify_triangles(triangles, target_count)
+                print(f"Simplified to {len(triangles)} triangles")
+
+            node = stl_to_geomnode(triangles, name=str(stl_path))
+            self.model = self.render.attach_new_node(node)
+        else:
+            if target_count > 0:
+                print("Note: --target-count only applies to STL files; ignoring.")
+            self.model = load_panda_model(self.loader, stl_path)
+            self.model.reparent_to(self.render)
+            has_texture = self.model.find_all_textures().get_num_textures() > 0
 
         self._center_and_scale(self.model)
 
@@ -345,7 +410,9 @@ class STLViewer(ShowBase):
         self.model.reparent_to(self.pivot)
 
         if wireframe:
-            outline_node = build_facet_outline_geomnode(triangles, name=stl_path + "_outline")
+            if triangles is None:
+                sys.exit("--wireframe is only supported for STL files.")
+            outline_node = build_facet_outline_geomnode(triangles, name=str(stl_path) + "_outline")
             self.outline = self.render.attach_new_node(outline_node)
             self._center_and_scale(self.outline)
             self.outline.set_color(Vec4(*edge_color, 1))
@@ -354,7 +421,12 @@ class STLViewer(ShowBase):
             self.model.hide()
         else:
             self._setup_lights()
-            self.model.set_color(Vec4(*color, 1))
+            # Keep the model's own textures/materials; only tint untextured
+            # models with the requested flat color.
+            if has_texture:
+                self.model.set_shader_auto()
+            else:
+                self.model.set_color(Vec4(*color, 1))
 
         if self._offline:
             self._output_path = output
@@ -481,7 +553,7 @@ class STLViewer(ShowBase):
         shutil.rmtree(self._temp_dir, ignore_errors=True)
 
 
-app = typer.Typer(help="Spin an STL model with optional wireframe rendering.")
+app = typer.Typer(help="Spin a 3D model with optional wireframe rendering.")
 
 
 def _parse_hex_color(value: str) -> tuple[float, float, float]:
@@ -497,7 +569,12 @@ def _parse_hex_color(value: str) -> tuple[float, float, float]:
 
 @app.command()
 def main(
-    stl: Annotated[str, typer.Argument(help="path to the .stl file")],
+    stl: Annotated[
+        Path,
+        typer.Argument(
+            help="path to the model file (.stl, .obj, .gltf, .glb, .egg, .bam, .dae, .fbx, .ply, …)"
+        ),
+    ],
     speed: Annotated[
         float, typer.Option(help="rotation speed in degrees/second (negative reverses)")
     ] = 45.0,
