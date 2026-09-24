@@ -77,6 +77,33 @@ python -m 3d_animate model.stl --output spin.mov --fps 60 --width 1280 --height 
 python -m 3d_animate model.stl --output spin.mp4
 ```
 
+### Headless / server rendering
+
+Video export uses an offscreen window, so it works on a machine with no display —
+but Panda3D still needs an OpenGL context. On a headless server you typically have
+neither an X display nor EGL, so rendering fails with:
+
+```
+Unable to load libp3headlessgl.so: libEGL.so.1: cannot open shared object file
+Unable to open 'offscreen' window.
+```
+
+Install EGL plus a software OpenGL renderer (one-time, needs root):
+
+```bash
+sudo apt-get update && sudo apt-get install -y libegl1 libgl1-mesa-dri libgbm1
+```
+
+Then export as usual. On a server with no GPU, force the Mesa software renderer:
+
+```bash
+LIBGL_ALWAYS_SOFTWARE=1 python -m 3d_animate model.stl --output spin.mp4
+```
+
+`libegl1` provides the `libEGL.so.1` Panda3D's headless GL needs, and
+`libgl1-mesa-dri` provides Mesa's software renderer (`llvmpipe`) so no GPU is
+required.
+
 ### Mesh simplification
 
 ```bash
