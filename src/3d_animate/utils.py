@@ -17,6 +17,8 @@ from panda3d.core import (
     NodePath,
 )
 
+from . import logger
+
 Vec3 = tuple[float, float, float]
 Triangle = tuple[Vec3, list[Vec3]]
 
@@ -299,9 +301,9 @@ def load_panda_model(loader, path: Path) -> NodePath:
     textures = model.find_all_textures()
     if textures:
         names = ", ".join(t.get_name() or "<unnamed>" for t in textures)
-        print(f"Loaded {textures.get_num_textures()} texture(s) from {path}: {names}")
+        logger.info("Loaded %d texture(s) from %s: %s", textures.get_num_textures(), path, names)
     else:
-        print(f"No embedded textures found in {path}")
+        logger.info("No embedded textures found in %s", path)
     return model
 
 

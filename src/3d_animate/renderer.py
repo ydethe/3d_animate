@@ -14,7 +14,9 @@ from panda3d.core import (
     Vec4,
     loadPrcFileData,
 )
+from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 
+from . import console, logger
 from .utils import (
     build_facet_outline_geomnode,
     load_panda_model,
@@ -22,6 +24,12 @@ from .utils import (
     simplify_triangles,
     stl_to_geomnode,
 )
+
+# Quiet Panda3D's own notify chatter; only surface warnings and errors.
+loadPrcFileData("", "notify-level warning")
+loadPrcFileData("", "default-directnotify-level warning")
+# No audio is used, so skip OpenAL/ALSA init and the device-error spam it prints.
+loadPrcFileData("", "audio-library-name null")
 
 Vec3 = tuple[float, float, float]
 Triangle = tuple[Vec3, list[Vec3]]
@@ -70,17 +78,17 @@ class STLViewer(ShowBase):
             triangles = load_stl(stl_path)
             if not triangles:
                 sys.exit(f"No triangles found in {stl_path!r} — is it a valid STL?")
-            print(f"Loaded {len(triangles)} triangles from {stl_path}")
+            logger.info("Loaded %d triangles from %s", len(triangles), stl_path)
 
             if target_count > 0 and target_count < len(triangles):
                 triangles = simplify_triangles(triangles, target_count)
-                print(f"Simplified to {len(triangles)} triangles")
+                logger.info("Simplified to %d triangles", len(triangles))
 
             node = stl_to_geomnode(triangles, name=str(stl_path))
             self.model = self.render.attach_new_node(node)
         else:
             if target_count > 0:
-                print("Note: --target-count only applies to STL files; ignoring.")
+                logger.warning("--target-count only applies to STL files; ignoring.")
             self.model = load_panda_model(self.loader, stl_path)
             self.model.reparent_to(self.render)
             has_texture = self.model.find_all_textures().get_num_textures() > 0
@@ -120,10 +128,21 @@ class STLViewer(ShowBase):
             self._total_frames = max(1, round(duration * fps))
             self._frame_idx = 0
             self._temp_dir = tempfile.mkdtemp(prefix="stl_video_")
-            print(
-                f"Rendering {self._total_frames} frames at {fps} fps"
-                f" ({duration:.2f}s for 360°)…"
+            logger.info(
+                "Rendering %d frames at %d fps (%.2fs for 360°)…",
+                self._total_frames,
+                fps,
+                duration,
             )
+            self._progress = Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("{task.completed}/{task.total} frames"),
+                TimeRemainingColumn(),
+                console=console,
+            )
+            self._progress.start()
+            self._progress_task = self._progress.add_task("Capturing", total=self._total_frames)
             self.taskMgr.add(self._capture_task, "capture")
         else:
             self.taskMgr.add(self._spin_task, "spin")
@@ -173,21 +192,21 @@ class STLViewer(ShowBase):
 
     def _toggle_pause(self) -> None:
         self.paused = not self.paused
-        print("Paused" if self.paused else "Resumed")
+        logger.info("Paused" if self.paused else "Resumed")
 
     def _change_speed(self, delta: float) -> None:
         self.speed += delta
-        print(f"Speed: {self.speed:.0f} deg/s")
+        logger.info("Speed: %.0f deg/s", self.speed)
 
     def _print_help(self) -> None:
-        print("Controls:  +/-  speed    space  pause    esc  quit")
-        print(f"Rotation speed: {self.speed:.0f} deg/s")
+        logger.info("Controls:  +/-  speed    space  pause    esc  quit")
+        logger.info("Rotation speed: %.0f deg/s", self.speed)
 
     # -- Offscreen video capture --
 
     def _capture_task(self, task: AsyncTask) -> int:
         if self._frame_idx >= self._total_frames:
-            print()  # newline after progress line
+            self._progress.stop()
             self._encode_video()
             sys.exit(0)
 
@@ -199,11 +218,7 @@ class STLViewer(ShowBase):
         self.win.save_screenshot(frame_path)  # type: ignore
 
         self._frame_idx += 1
-        print(
-            f"\rFrame {self._frame_idx}/{self._total_frames}",
-            end="",
-            flush=True,
-        )
+        self._progress.update(self._progress_task, completed=self._frame_idx)
         return task.cont
 
     def _encode_video(self) -> None:
@@ -216,8 +231,8 @@ class STLViewer(ShowBase):
             codec_args = ["-c:v", "prores_ks", "-profile:v", "4", "-pix_fmt", "yuva444p10le"]
         else:
             if ext == ".mp4":
-                print(
-                    "Note: H.264 inside MP4 does not support alpha."
+                logger.warning(
+                    "H.264 inside MP4 does not support alpha."
                     " Use .webm or .mov for a transparent output."
                 )
             codec_args = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18"]
@@ -225,6 +240,10 @@ class STLViewer(ShowBase):
         cmd = [
             "ffmpeg",
             "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostats",
             "-framerate",
             str(self._fps),
             "-i",
@@ -232,7 +251,15 @@ class STLViewer(ShowBase):
             *codec_args,
             self._output_path,
         ]
-        print(f"Encoding: {' '.join(cmd)}")
-        subprocess.run(cmd, check=True)
-        print(f"Saved: {self._output_path!r}")
+        logger.info("Encoding %s…", self._output_path)
+        logger.debug("ffmpeg command: %s", " ".join(cmd))
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            # ffmpeg was silenced above, so surface whatever it did emit on failure.
+            logger.error("ffmpeg failed (exit %d):\n%s", result.returncode, result.stderr.strip())
+            shutil.rmtree(self._temp_dir, ignore_errors=True)
+            raise subprocess.CalledProcessError(
+                result.returncode, cmd, result.stdout, result.stderr
+            )
+        logger.info("Saved %s", self._output_path)
         shutil.rmtree(self._temp_dir, ignore_errors=True)
