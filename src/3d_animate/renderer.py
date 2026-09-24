@@ -21,6 +21,7 @@ from .utils import (
     build_facet_outline_geomnode,
     load_panda_model,
     load_stl,
+    nodepath_to_triangles,
     simplify_triangles,
     stl_to_geomnode,
 )
@@ -92,6 +93,13 @@ class STLViewer(ShowBase):
             self.model = load_panda_model(self.loader, stl_path)
             self.model.reparent_to(self.render)
             has_texture = self.model.find_all_textures().get_num_textures() > 0
+            # Wireframe needs raw triangles; Panda3D's loader only hands back an
+            # opaque scene graph, so read the geometry back out of the model.
+            if wireframe:
+                triangles = nodepath_to_triangles(self.model)
+                logger.info(
+                    "Extracted %d triangles from %s for wireframe", len(triangles), stl_path
+                )
 
         self._center_and_scale(self.model)
 
@@ -104,7 +112,7 @@ class STLViewer(ShowBase):
 
         if wireframe:
             if triangles is None:
-                sys.exit("--wireframe is only supported for STL files.")
+                sys.exit("--wireframe could not obtain mesh geometry for this file.")
             outline_node = build_facet_outline_geomnode(triangles, name=str(stl_path) + "_outline")
             self.outline = self.render.attach_new_node(outline_node)
             self._center_and_scale(self.outline)

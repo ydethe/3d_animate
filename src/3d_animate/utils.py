@@ -95,6 +95,45 @@ def load_stl(path: Path) -> list[Triangle]:
     return _parse_ascii_stl(path)
 
 
+def nodepath_to_triangles(model: NodePath) -> list[Triangle]:
+    """Extract world-space triangles from an already-loaded Panda3D model.
+
+    Used to obtain the raw geometry needed for wireframe rendering of non-STL
+    formats (``.obj``, ``.fbx``, ``.gltf`` …). Panda3D's loader (via its bundled
+    Assimp plugin) hands back an opaque scene graph rather than vertex arrays, so
+    we walk every ``GeomNode``, decompose its primitives into triangles and read
+    back the vertex positions, baking in each node's transform relative to
+    *model*. The per-triangle normal is left zeroed — the facet-outline builder
+    recomputes connectivity from positions and ignores it.
+    """
+    from panda3d.core import GeomVertexReader
+
+    zero_normal: Vec3 = (0.0, 0.0, 0.0)
+    triangles: list[Triangle] = []
+
+    for np_geom in model.find_all_matches("**/+GeomNode"):
+        geom_node = np_geom.node()
+        transform = np_geom.get_transform(model).get_mat()
+        for gi in range(geom_node.get_num_geoms()):
+            geom = geom_node.get_geom(gi)
+            vdata = geom.get_vertex_data()
+            reader = GeomVertexReader(vdata, "vertex")
+            for pi in range(geom.get_num_primitives()):
+                prim = geom.get_primitive(pi).decompose()
+                indices = prim.get_vertex_list()
+                for k in range(0, len(indices) - 2, 3):
+                    verts: list[Vec3] = []
+                    for j in range(3):
+                        reader.set_row(indices[k + j])
+                        point = transform.xform_point(reader.get_data3())
+                        verts.append((point[0], point[1], point[2]))
+                    triangles.append((zero_normal, verts))
+
+    if not triangles:
+        sys.exit("No triangle geometry found in the loaded model for wireframe rendering.")
+    return triangles
+
+
 def simplify_triangles(triangles: list[Triangle], target_count: int) -> list[Triangle]:
     """Reduce the mesh to *target_count* triangles using Fast Quadric Mesh Reduction."""
     verts_list: list[Vec3] = []

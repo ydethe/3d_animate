@@ -15,6 +15,7 @@ testfile.bin
 .*
 *.mmdb
 *.stl
+*.fbx
 *.mov
 *.mp4
 
