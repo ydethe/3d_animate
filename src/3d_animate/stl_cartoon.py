@@ -25,12 +25,12 @@ Controls (interactive mode only):
 """
 
 import os
-from pathlib import Path
 import shutil
 import struct
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from typing import Annotated, Optional
 
 import numpy as np
