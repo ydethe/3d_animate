@@ -14,10 +14,14 @@ manifest.json
 testfile.bin
 .*
 *.mmdb
-*.stl
-*.fbx
 *.mov
 *.mp4
+models/
+dist/
+output/
+*.fbx
+*.stl
+*.mov
 
 # Test binary, built with `go test -c`
 *.test

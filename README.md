@@ -13,7 +13,6 @@ native loaders for everything else.
 - Loads referenced/embedded textures automatically (resolved next to the model file)
 - Interactive viewer with keyboard controls
 - Wireframe / outline mode (facet-aware edge detection via trimesh; STL only)
-- Mesh simplification via Fast Quadric Mesh Reduction (`pyfqmr`)
 - Offscreen video export: `.webm` (transparent), `.mov` (transparent), `.mp4` (opaque)
 - Configurable rotation speed, model color, edge color, and background color
 
@@ -104,13 +103,6 @@ LIBGL_ALWAYS_SOFTWARE=1 python -m 3d_animate model.stl --output spin.mp4
 `libgl1-mesa-dri` provides Mesa's software renderer (`llvmpipe`) so no GPU is
 required.
 
-### Mesh simplification
-
-```bash
-# Reduce to 5 000 triangles before rendering
-python -m 3d_animate model.stl --target-count 5000
-```
-
 ### All options
 
 | Option | Default | Description |
@@ -125,7 +117,6 @@ python -m 3d_animate model.stl --target-count 5000
 | `--fps` | `30` | Frames per second for video output |
 | `--width` | `1920` | Video width in pixels |
 | `--height` | `1080` | Video height in pixels |
-| `--target-count` | `0` | Simplify mesh to this many triangles (`0` = off) |
 
 ## License
 

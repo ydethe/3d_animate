@@ -46,9 +46,6 @@ def main(
     fps: Annotated[int, typer.Option(help="frames per second for video output")] = 30,
     width: Annotated[int, typer.Option(help="video width in pixels")] = 1920,
     height: Annotated[int, typer.Option(help="video height in pixels")] = 1080,
-    target_count: Annotated[
-        int, typer.Option(help="simplify mesh to this many triangles (0 = no simplification)")
-    ] = 0,
 ) -> None:
     bg = (*_parse_hex_color(bg_color), 1.0) if bg_color else (0.0, 0.0, 0.0, 0.0)
     viewer = STLViewer(
@@ -62,7 +59,6 @@ def main(
         fps=fps,
         width=width,
         height=height,
-        target_count=target_count,
     )
     viewer.run()
 

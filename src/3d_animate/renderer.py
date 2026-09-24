@@ -22,7 +22,6 @@ from .utils import (
     load_panda_model,
     load_stl,
     nodepath_to_triangles,
-    simplify_triangles,
     stl_to_geomnode,
 )
 
@@ -52,7 +51,6 @@ class STLViewer(ShowBase):
         fps: int = 30,
         width: int = 1920,
         height: int = 1080,
-        target_count: int = 0,
     ) -> None:
         self._offline = output is not None
 
@@ -81,15 +79,9 @@ class STLViewer(ShowBase):
                 sys.exit(f"No triangles found in {stl_path!r} — is it a valid STL?")
             logger.info("Loaded %d triangles from %s", len(triangles), stl_path)
 
-            if target_count > 0 and target_count < len(triangles):
-                triangles = simplify_triangles(triangles, target_count)
-                logger.info("Simplified to %d triangles", len(triangles))
-
             node = stl_to_geomnode(triangles, name=str(stl_path))
             self.model = self.render.attach_new_node(node)
         else:
-            if target_count > 0:
-                logger.warning("--target-count only applies to STL files; ignoring.")
             self.model = load_panda_model(self.loader, stl_path)
             self.model.reparent_to(self.render)
             has_texture = self.model.find_all_textures().get_num_textures() > 0

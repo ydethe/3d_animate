@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pyfqmr
 import typer
 from panda3d.core import (
     Geom,
@@ -132,41 +131,6 @@ def nodepath_to_triangles(model: NodePath) -> list[Triangle]:
     if not triangles:
         sys.exit("No triangle geometry found in the loaded model for wireframe rendering.")
     return triangles
-
-
-def simplify_triangles(triangles: list[Triangle], target_count: int) -> list[Triangle]:
-    """Reduce the mesh to *target_count* triangles using Fast Quadric Mesh Reduction."""
-    verts_list: list[Vec3] = []
-    index_of: dict[Vec3, int] = {}
-    faces_list: list[tuple[int, int, int]] = []
-
-    for _normal, verts in triangles:
-        face_indices: list[int] = []
-        for v in verts:
-            if v not in index_of:
-                index_of[v] = len(verts_list)
-                verts_list.append(v)
-            face_indices.append(index_of[v])
-        faces_list.append((face_indices[0], face_indices[1], face_indices[2]))
-
-    vertices = np.array(verts_list, dtype=np.float64)
-    faces = np.array(faces_list, dtype=np.uint32)
-
-    simplifier = pyfqmr.Simplify()  # type: ignore
-    simplifier.setMesh(vertices, faces)
-    simplifier.simplify_mesh(target_count=target_count, aggressiveness=10, verbose=False)
-    new_verts, new_faces, new_normals = simplifier.getMesh()
-
-    result: list[Triangle] = []
-    for i, (a, b, c) in enumerate(new_faces):
-        n = tuple(float(x) for x in new_normals[i])
-        v = [
-            tuple(float(x) for x in new_verts[a]),
-            tuple(float(x) for x in new_verts[b]),
-            tuple(float(x) for x in new_verts[c]),
-        ]
-        result.append((n, v))  # type: ignore[arg-type]
-    return result
 
 
 def _face_normal(v0: Vec3, v1: Vec3, v2: Vec3) -> LVector3:
