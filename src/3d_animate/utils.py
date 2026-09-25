@@ -166,6 +166,59 @@ def repair_stl_mesh(triangles: list[Triangle]) -> list[Triangle]:
     return repaired
 
 
+def simplify_stl_mesh(triangles: list[Triangle], ratio: float) -> list[Triangle]:
+    """Decimate the mesh to *ratio* of its original face count using pymeshlab.
+
+    *ratio* must be in (0, 1]. Values close to 1 preserve nearly all faces;
+    values close to 0 produce a very coarse approximation.
+    """
+    import pymeshlab  # type: ignore
+
+    verts_list: list[Vec3] = []
+    index_of: dict[Vec3, int] = {}
+    faces_list: list[tuple[int, int, int]] = []
+    for _normal, verts in triangles:
+        face_idxs: list[int] = []
+        for v in verts:
+            if v not in index_of:
+                index_of[v] = len(verts_list)
+                verts_list.append(v)
+            face_idxs.append(index_of[v])
+        faces_list.append((face_idxs[0], face_idxs[1], face_idxs[2]))
+
+    target = max(1, round(len(faces_list) * ratio))
+    logger.info("Simplifying mesh: %d → ~%d faces (ratio %.2f)", len(faces_list), target, ratio)
+
+    m = pymeshlab.Mesh(  # type: ignore
+        vertex_matrix=np.array(verts_list, dtype=np.float64),
+        face_matrix=np.array(faces_list, dtype=np.int32),
+    )
+    ms = pymeshlab.MeshSet()  # type: ignore
+    ms.add_mesh(m)  # type: ignore
+    ms.meshing_decimation_quadric_edge_collapse(targetfacenum=target)  # type: ignore
+    ms.compute_normal_per_face()  # type: ignore
+
+    out = ms.current_mesh()
+    mesh_verts = out.vertex_matrix()
+    mesh_faces = out.face_matrix()
+    mesh_normals = out.face_normal_matrix()
+
+    result: list[Triangle] = []
+    for fi in range(len(mesh_faces)):
+        a, b, c = int(mesh_faces[fi][0]), int(mesh_faces[fi][1]), int(mesh_faces[fi][2])
+        n = mesh_normals[fi]
+        normal: Vec3 = (float(n[0]), float(n[1]), float(n[2]))
+        tri_verts: list[Vec3] = [
+            (float(mesh_verts[a][0]), float(mesh_verts[a][1]), float(mesh_verts[a][2])),
+            (float(mesh_verts[b][0]), float(mesh_verts[b][1]), float(mesh_verts[b][2])),
+            (float(mesh_verts[c][0]), float(mesh_verts[c][1]), float(mesh_verts[c][2])),
+        ]
+        result.append((normal, tri_verts))
+
+    logger.info("Simplified to %d faces", len(result))
+    return result
+
+
 def nodepath_to_triangles(model: NodePath) -> list[Triangle]:
     """Extract world-space triangles from an already-loaded Panda3D model.
 

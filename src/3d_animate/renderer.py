@@ -26,6 +26,7 @@ from .utils import (
     load_stl,
     nodepath_to_triangles,
     repair_stl_mesh,
+    simplify_stl_mesh,
     stl_to_geomnode,
 )
 
@@ -55,6 +56,7 @@ class STLViewer(ShowBase):
         fps: int = 30,
         width: int = 1920,
         height: int = 1080,
+        simplify: float | None = None,
     ) -> None:
         self._offline = output is not None
 
@@ -81,10 +83,13 @@ class STLViewer(ShowBase):
             triangles = load_stl(stl_path)
             if not triangles:
                 sys.exit(f"No triangles found in {stl_path!r} — is it a valid STL?")
-            logger.info("Loaded %d triangles from %s", len(triangles), stl_path)
+            logger.info("Loaded %d triangles from '%s'", len(triangles), stl_path)
 
             triangles = repair_stl_mesh(triangles)
             logger.info("Repaired mesh (winding, inversion, normals)")
+
+            if simplify is not None:
+                triangles = simplify_stl_mesh(triangles, simplify)
 
             node = stl_to_geomnode(triangles, name=str(stl_path))
             self.model = self.render.attach_new_node(node)
