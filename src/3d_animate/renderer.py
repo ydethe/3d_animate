@@ -10,8 +10,11 @@ from panda3d.core import (
     AmbientLight,
     AsyncTask,
     DirectionalLight,
+    FrameBufferProperties,
+    GraphicsPipe,
     NodePath,
     Vec4,
+    WindowProperties,
     loadPrcFileData,
 )
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
@@ -22,6 +25,7 @@ from .utils import (
     load_panda_model,
     load_stl,
     nodepath_to_triangles,
+    repair_stl_mesh,
     stl_to_geomnode,
 )
 
@@ -79,6 +83,9 @@ class STLViewer(ShowBase):
                 sys.exit(f"No triangles found in {stl_path!r} — is it a valid STL?")
             logger.info("Loaded %d triangles from %s", len(triangles), stl_path)
 
+            triangles = repair_stl_mesh(triangles)
+            logger.info("Repaired mesh (winding, inversion, normals)")
+
             node = stl_to_geomnode(triangles, name=str(stl_path))
             self.model = self.render.attach_new_node(node)
         else:
@@ -122,6 +129,7 @@ class STLViewer(ShowBase):
                 self.model.set_color(Vec4(*color, 1))
 
         if self._offline:
+            self._capture_win = self._make_capture_buffer(width, height, bg_color)
             self._output_path = output
             self._fps = fps
             duration = 360.0 / abs(speed)
@@ -204,6 +212,51 @@ class STLViewer(ShowBase):
 
     # -- Offscreen video capture --
 
+    def _make_capture_buffer(
+        self, width: int, height: int, bg_color: tuple[float, float, float, float]
+    ):
+        """Render captures into a dedicated buffer with a guaranteed alpha channel.
+
+        The main window's framebuffer is derived from whatever visual the host
+        display offers, which frequently lacks alpha bits even with
+        ``framebuffer-alpha true`` set — so its screenshots come out opaque. An
+        explicit off-screen buffer that *requires* 8 alpha bits keeps the
+        transparent background intact regardless of the host's default visual.
+        """
+        fb_props = FrameBufferProperties()
+        fb_props.set_rgb_color(True)
+        fb_props.set_rgba_bits(8, 8, 8, 8)
+        fb_props.set_depth_bits(24)
+        win_props = WindowProperties.size(width, height)
+
+        buffer = self.graphicsEngine.make_output(
+            self.pipe,
+            "capture_buffer",
+            -100,
+            fb_props,
+            win_props,
+            GraphicsPipe.BFRefuseWindow,
+            self.win.get_gsg(),
+            self.win,
+        )
+        if buffer is None:
+            logger.warning(
+                "Could not create an alpha-capable capture buffer;"
+                " falling back to the main window (background may be opaque)."
+            )
+            return None
+
+        got_alpha = buffer.get_fb_properties().get_alpha_bits()
+        logger.debug("Capture buffer alpha bits: %d", got_alpha)
+        if got_alpha < 1:
+            logger.warning("Capture buffer has no alpha channel; output will be opaque.")
+
+        buffer.set_clear_color(Vec4(*bg_color))
+        buffer.set_clear_color_active(True)
+        display_region = buffer.make_display_region(0, 1, 0, 1)
+        display_region.set_camera(self.cam)
+        return buffer
+
     def _capture_task(self, task: AsyncTask) -> int:
         if self._frame_idx >= self._total_frames:
             self._progress.stop()
@@ -215,7 +268,8 @@ class STLViewer(ShowBase):
 
         self.graphicsEngine.render_frame()
         frame_path = os.path.join(self._temp_dir, f"frame_{self._frame_idx:06d}.png")
-        self.win.save_screenshot(frame_path)  # type: ignore
+        capture_win = self._capture_win or self.win
+        capture_win.save_screenshot(frame_path)  # type: ignore
 
         self._frame_idx += 1
         self._progress.update(self._progress_task, completed=self._frame_idx)

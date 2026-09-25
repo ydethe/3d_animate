@@ -94,6 +94,57 @@ def load_stl(path: Path) -> list[Triangle]:
     return _parse_ascii_stl(path)
 
 
+def repair_stl_mesh(triangles: list[Triangle]) -> list[Triangle]:
+    """Fix winding, inversion and normals of parsed STL triangles via trimesh.
+
+    STL files frequently ship with inconsistent face winding or inward-facing
+    normals, which makes flat shading look blotchy. We weld the raw triangles
+    into a trimesh, let it repair the topology, and hand back triangles whose
+    per-face normals point consistently outward.
+    """
+    import trimesh
+
+    verts_list: list[Vec3] = []
+    index_of: dict[Vec3, int] = {}
+    faces_list: list[tuple[int, int, int]] = []
+    for _normal, verts in triangles:
+        face_idxs: list[int] = []
+        for v in verts:
+            if v not in index_of:
+                index_of[v] = len(verts_list)
+                verts_list.append(v)
+            face_idxs.append(index_of[v])
+        faces_list.append((face_idxs[0], face_idxs[1], face_idxs[2]))
+
+    mesh = trimesh.Trimesh(
+        vertices=np.array(verts_list, dtype=np.float64),
+        faces=np.array(faces_list, dtype=np.int32),
+        process=False,
+    )
+
+    # Flip any inward-facing faces, make winding consistent across the surface,
+    # then recompute normals from the corrected topology.
+    trimesh.repair.fix_inversion(mesh)
+    trimesh.repair.fix_winding(mesh)
+    mesh.fix_normals()
+
+    mesh_verts = mesh.vertices
+    mesh_faces = mesh.faces
+    mesh_normals = mesh.face_normals
+    repaired: list[Triangle] = []
+    for fi in range(len(mesh_faces)):
+        a, b, c = (int(i) for i in mesh_faces[fi])
+        n = mesh_normals[fi]
+        normal: Vec3 = (float(n[0]), float(n[1]), float(n[2]))
+        tri_verts: list[Vec3] = [
+            (float(mesh_verts[a][0]), float(mesh_verts[a][1]), float(mesh_verts[a][2])),
+            (float(mesh_verts[b][0]), float(mesh_verts[b][1]), float(mesh_verts[b][2])),
+            (float(mesh_verts[c][0]), float(mesh_verts[c][1]), float(mesh_verts[c][2])),
+        ]
+        repaired.append((normal, tri_verts))
+    return repaired
+
+
 def nodepath_to_triangles(model: NodePath) -> list[Triangle]:
     """Extract world-space triangles from an already-loaded Panda3D model.
 
