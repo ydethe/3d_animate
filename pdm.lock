@@ -5,10 +5,10 @@
 groups = ["default", "dev", "doc", "test"]
 strategy = []
 lock_version = "4.5.1"
-content_hash = "sha256:2ac9eb8872f86e2d5a9fb156cfef8f093ee98904abbb6e7373ef7bb6744f236b"
+content_hash = "sha256:ac7ec5f6041ed8cb605ee82a7e9fe9b0479b5bf60969879185fc3e850e070465"
 
 [[metadata.targets]]
-requires_python = ">=3.12"
+requires_python = ">=3.12,!=3.14.1"
 
 [[package]]
 name = "aiosqlite"
@@ -572,11 +572,11 @@ files = [
 
 [[package]]
 name = "markdown"
-version = "3.10.3"
+version = "3.11"
 summary = ""
 files = [
-    {file = "markdown-3.10.3-py3-none-any.whl", hash = "sha256:fa6c92a00a4a3c98b22728c64a935ae1928250ae65058a6ded814d2cc29a4cea"},
-    {file = "markdown-3.10.3.tar.gz", hash = "sha256:3589362618f743188b4d955b874402bc814f4f83f544dc207719f4baa7d9c45f"},
+    {file = "markdown-3.11-py3-none-any.whl", hash = "sha256:cd6c89e7eb308c8b332ed673215a52d208a43f8bacc030b1419376129408719e"},
+    {file = "markdown-3.11.tar.gz", hash = "sha256:180224db6aed87ba9ce1f2781ebcd5826253de8ff637112090e24b84502bbf9f"},
 ]
 
 [[package]]
@@ -691,6 +691,15 @@ summary = ""
 files = [
     {file = "mypy_extensions-1.1.0-py3-none-any.whl", hash = "sha256:1be4cccdb0f2482337c4743e60421de3a356cd97508abadd57d47403e94f5505"},
     {file = "mypy_extensions-1.1.0.tar.gz", hash = "sha256:52e68efc3284861e772bbcd66823fde5ae21fd2fdb51c62a211403730b916558"},
+]
+
+[[package]]
+name = "networkx"
+version = "3.7"
+summary = ""
+files = [
+    {file = "networkx-3.7-py3-none-any.whl", hash = "sha256:e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0"},
+    {file = "networkx-3.7.tar.gz", hash = "sha256:fd77a511bd90f39f3d016351345b52cf5319b813bdca01de3f755d3cca62e96a"},
 ]
 
 [[package]]
@@ -961,11 +970,11 @@ files = [
 
 [[package]]
 name = "platformdirs"
-version = "4.11.12"
+version = "4.11.14"
 summary = ""
 files = [
-    {file = "platformdirs-4.11.12-py3-none-any.whl", hash = "sha256:b1ba966ac76153d9985a0787ffab951e7c18416189873d4e4ddb2c8a04a0a254"},
-    {file = "platformdirs-4.11.12.tar.gz", hash = "sha256:e8dc1cb58f1153fd7f61db1374317770baababec2480b37b8f01c6cc25b45267"},
+    {file = "platformdirs-4.11.14-py3-none-any.whl", hash = "sha256:c1b1a1eab4f4d1b0eb81754593f1c38de88e84ebe6f93bf6714706a6759074b1"},
+    {file = "platformdirs-4.11.14.tar.gz", hash = "sha256:0e706ec0a73a4ec023d11496153a4b6607a672f4b5027c23c3aefa9c9288c523"},
 ]
 
 [[package]]
@@ -1076,6 +1085,31 @@ summary = ""
 files = [
     {file = "pygments-2.21.0-py3-none-any.whl", hash = "sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9"},
     {file = "pygments-2.21.0.tar.gz", hash = "sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c"},
+]
+
+[[package]]
+name = "pymeshlab"
+version = "2025.7.post1"
+summary = ""
+dependencies = [
+    "numpy",
+]
+files = [
+    {file = "pymeshlab-2025.7.post1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:693101c1ade7aadbad114878626307bf434fe607de873449fbe6b6b95a30cd01"},
+    {file = "pymeshlab-2025.7.post1-cp312-cp312-macosx_11_0_x86_64.whl", hash = "sha256:265503a06968420c8eb6934e3db78ff0767518000d8afd46ef3c976a506cfcf7"},
+    {file = "pymeshlab-2025.7.post1-cp312-cp312-manylinux_2_35_aarch64.whl", hash = "sha256:d39fbaac1274adbbdf75cd999710d2ba48bd4d9087f34815afbdedb99dd3ded6"},
+    {file = "pymeshlab-2025.7.post1-cp312-cp312-manylinux_2_35_x86_64.whl", hash = "sha256:bc453d89b114671affc747991a939b257d2320b71885b31213190c64081f5c35"},
+    {file = "pymeshlab-2025.7.post1-cp312-cp312-win_amd64.whl", hash = "sha256:fc04cb2206e8d0194b2c8f61ea6ef54505bbe3d217e7f1960ee9608464f9bfad"},
+    {file = "pymeshlab-2025.7.post1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:841b1fa15fc76ab73e594f4bbfcbe339782b36be67d9387ff5aa5f4ca422e180"},
+    {file = "pymeshlab-2025.7.post1-cp313-cp313-macosx_11_0_x86_64.whl", hash = "sha256:06c7171f70ff86753535d1c0d952ead34854923061af37197e9cc22dea515e9d"},
+    {file = "pymeshlab-2025.7.post1-cp313-cp313-manylinux_2_35_aarch64.whl", hash = "sha256:2432dffe99e58e1b5e77dbfeb7690502b6d0ebccb1ed75356fca4676ec56c9a2"},
+    {file = "pymeshlab-2025.7.post1-cp313-cp313-manylinux_2_35_x86_64.whl", hash = "sha256:99bb0f83ad20c61bdc63beb8d7f0c9ed3af6912a4770da170ce8d4bd02a7ecb0"},
+    {file = "pymeshlab-2025.7.post1-cp313-cp313-win_amd64.whl", hash = "sha256:25eb2578dd6c4d1b2e0253fb3b4f8f7895e8bb4f3f1236832db0ab58e6a44998"},
+    {file = "pymeshlab-2025.7.post1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:c9990cd5e4620fc598795baf91f1b7b37ebb65a7b87eb01beb54d37339207d46"},
+    {file = "pymeshlab-2025.7.post1-cp314-cp314-macosx_11_0_x86_64.whl", hash = "sha256:472b7247e4ae9b9937d9a13bfb78b9e6e777b805ae20a114101f9dcc15bea8fc"},
+    {file = "pymeshlab-2025.7.post1-cp314-cp314-manylinux_2_35_aarch64.whl", hash = "sha256:de6468bf43d5eeb23cdac78fe30286694ff5ad6d349a9bfa44584ac7e434e054"},
+    {file = "pymeshlab-2025.7.post1-cp314-cp314-manylinux_2_35_x86_64.whl", hash = "sha256:951fe5aeb3e92632f3db3a1a6525279b41e5d7191c6b9011429dbb0b67f2f0d3"},
+    {file = "pymeshlab-2025.7.post1-cp314-cp314-win_amd64.whl", hash = "sha256:881389fb62ac832c81555fe22a3990a81624deb78e78ca3862836075d5c62c2b"},
 ]
 
 [[package]]
@@ -1527,7 +1561,7 @@ files = [
 
 [[package]]
 name = "virtualenv"
-version = "21.12.0"
+version = "21.12.1"
 summary = ""
 dependencies = [
     "distlib",
@@ -1536,8 +1570,8 @@ dependencies = [
     "python-discovery",
 ]
 files = [
-    {file = "virtualenv-21.12.0-py3-none-any.whl", hash = "sha256:7c48862b3f355c3f5f08d0e21af8a9ea601e0c56385f8e189c7117809ef0b4db"},
-    {file = "virtualenv-21.12.0.tar.gz", hash = "sha256:bc5923d9f3e25f4114d6335e99c265978386d3ce8a6a0ec061b18d9b1635b016"},
+    {file = "virtualenv-21.12.1-py3-none-any.whl", hash = "sha256:878db9e963d0ef0b38561a344a4f9b12dc5c7741b6245d7ed10e9291cfea28bc"},
+    {file = "virtualenv-21.12.1.tar.gz", hash = "sha256:be5a0a62cb2d1529ff6999652e2e7826f95bf7faa9b96b88cc39847c023d90a0"},
 ]
 
 [[package]]

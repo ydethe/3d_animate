@@ -95,14 +95,14 @@ def load_stl(path: Path) -> list[Triangle]:
 
 
 def repair_stl_mesh(triangles: list[Triangle]) -> list[Triangle]:
-    """Fix winding, inversion and normals of parsed STL triangles via trimesh.
+    """Fix winding, inversion and normals of parsed STL triangles via pymeshlab.
 
     STL files frequently ship with inconsistent face winding or inward-facing
     normals, which makes flat shading look blotchy. We weld the raw triangles
-    into a trimesh, let it repair the topology, and hand back triangles whose
-    per-face normals point consistently outward.
+    into a pymeshlab mesh, let it repair the topology, and hand back triangles
+    whose per-face normals point consistently outward.
     """
-    import trimesh
+    import pymeshlab  # type: ignore
 
     verts_list: list[Vec3] = []
     index_of: dict[Vec3, int] = {}
@@ -116,24 +116,45 @@ def repair_stl_mesh(triangles: list[Triangle]) -> list[Triangle]:
             face_idxs.append(index_of[v])
         faces_list.append((face_idxs[0], face_idxs[1], face_idxs[2]))
 
-    mesh = trimesh.Trimesh(
-        vertices=np.array(verts_list, dtype=np.float64),
-        faces=np.array(faces_list, dtype=np.int32),
-        process=False,
+    m = pymeshlab.Mesh(  # type: ignore
+        vertex_matrix=np.array(verts_list, dtype=np.float64),
+        face_matrix=np.array(faces_list, dtype=np.int32),
     )
+    ms = pymeshlab.MeshSet()  # type: ignore
+    ms.add_mesh(m)  # type: ignore
 
-    # Flip any inward-facing faces, make winding consistent across the surface,
-    # then recompute normals from the corrected topology.
-    trimesh.repair.fix_inversion(mesh)
-    trimesh.repair.fix_winding(mesh)
-    mesh.fix_normals()
+    # Remove duplicate/degenerate faces and repair non-manifold topology before
+    # attempting orientation, which requires a 2-manifold mesh.
+    ms.meshing_remove_duplicate_faces()  # type: ignore
+    ms.meshing_remove_unreferenced_vertices()  # type: ignore
+    try:
+        ms.meshing_repair_non_manifold_edges()  # type: ignore
+    except Exception as e:
+        logger.warning("Could not repair non-manifold edges (%s); skipping step", e)
 
-    mesh_verts = mesh.vertices
-    mesh_faces = mesh.faces
-    mesh_normals = mesh.face_normals
+    try:
+        ms.meshing_repair_non_manifold_vertices()  # type: ignore
+    except Exception as e:
+        logger.warning("Could not repair non-manifold vertices (%s); skipping step", e)
+
+    # Make winding consistent across connected components, then orient faces
+    # outward by geometry (convexity heuristic), and recompute per-face normals.
+    try:
+        ms.meshing_re_orient_faces_coherently()
+    except Exception as exc:
+        logger.warning("Could not re-orient faces coherently (%s); skipping step", exc)
+
+    ms.meshing_re_orient_faces_by_geometry()  # type: ignore
+    ms.compute_normal_per_face()  # type: ignore
+
+    out = ms.current_mesh()
+    mesh_verts = out.vertex_matrix()
+    mesh_faces = out.face_matrix()
+    mesh_normals = out.face_normal_matrix()
+
     repaired: list[Triangle] = []
     for fi in range(len(mesh_faces)):
-        a, b, c = (int(i) for i in mesh_faces[fi])
+        a, b, c = int(mesh_faces[fi][0]), int(mesh_faces[fi][1]), int(mesh_faces[fi][2])
         n = mesh_normals[fi]
         normal: Vec3 = (float(n[0]), float(n[1]), float(n[2]))
         tri_verts: list[Vec3] = [
