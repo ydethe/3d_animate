@@ -167,12 +167,12 @@ def repair_stl_mesh(triangles: list[Triangle]) -> list[Triangle]:
 
 
 def simplify_stl_mesh(triangles: list[Triangle], ratio: float) -> list[Triangle]:
-    """Decimate the mesh to *ratio* of its original face count using pymeshlab.
+    """Decimate the mesh to *ratio* of its original face count using trimesh.
 
     *ratio* must be in (0, 1]. Values close to 1 preserve nearly all faces;
     values close to 0 produce a very coarse approximation.
     """
-    import pymeshlab  # type: ignore
+    import trimesh  # type: ignore
 
     verts_list: list[Vec3] = []
     index_of: dict[Vec3, int] = {}
@@ -189,19 +189,16 @@ def simplify_stl_mesh(triangles: list[Triangle], ratio: float) -> list[Triangle]
     target = max(1, round(len(faces_list) * ratio))
     logger.info("Simplifying mesh: %d → ~%d faces (ratio %.2f)", len(faces_list), target, ratio)
 
-    m = pymeshlab.Mesh(  # type: ignore
-        vertex_matrix=np.array(verts_list, dtype=np.float64),
-        face_matrix=np.array(faces_list, dtype=np.int32),
+    mesh = trimesh.Trimesh(
+        vertices=np.array(verts_list, dtype=np.float64),
+        faces=np.array(faces_list, dtype=np.int32),
+        process=False,
     )
-    ms = pymeshlab.MeshSet()  # type: ignore
-    ms.add_mesh(m)  # type: ignore
-    ms.meshing_decimation_quadric_edge_collapse(targetfacenum=target)  # type: ignore
-    ms.compute_normal_per_face()  # type: ignore
+    simplified = mesh.simplify_quadric_decimation(target)
 
-    out = ms.current_mesh()
-    mesh_verts = out.vertex_matrix()
-    mesh_faces = out.face_matrix()
-    mesh_normals = out.face_normal_matrix()
+    mesh_verts = np.asarray(simplified.vertices)
+    mesh_faces = np.asarray(simplified.faces)
+    mesh_normals = np.asarray(simplified.face_normals)
 
     result: list[Triangle] = []
     for fi in range(len(mesh_faces)):
