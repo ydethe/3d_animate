@@ -186,15 +186,17 @@ def simplify_stl_mesh(triangles: list[Triangle], ratio: float) -> list[Triangle]
             face_idxs.append(index_of[v])
         faces_list.append((face_idxs[0], face_idxs[1], face_idxs[2]))
 
-    target = max(1, round(len(faces_list) * ratio))
-    logger.info("Simplifying mesh: %d → ~%d faces (ratio %.2f)", len(faces_list), target, ratio)
+    n_faces = len(faces_list)
+    target = max(1, round(n_faces * ratio))
+    logger.info("Simplifying mesh: %d → ~%d faces (ratio %.2f)", n_faces, target, ratio)
 
     mesh = trimesh.Trimesh(
         vertices=np.array(verts_list, dtype=np.float64),
         faces=np.array(faces_list, dtype=np.int32),
         process=False,
     )
-    simplified = mesh.simplify_quadric_decimation(target)
+    target_reduction = max(0.0, min(1.0, 1.0 - ratio))
+    simplified = mesh.simplify_quadric_decimation(percent=target_reduction)
 
     mesh_verts = np.asarray(simplified.vertices)
     mesh_faces = np.asarray(simplified.faces)

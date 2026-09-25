@@ -72,7 +72,7 @@ def main(
         wireframe,
         _parse_hex_color(edge_color),
         bg,
-        output=output,
+        output=str(output),
         fps=fps,
         width=width,
         height=height,

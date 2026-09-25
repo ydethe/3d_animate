@@ -85,11 +85,11 @@ class STLViewer(ShowBase):
                 sys.exit(f"No triangles found in {stl_path!r} — is it a valid STL?")
             logger.info("Loaded %d triangles from '%s'", len(triangles), stl_path)
 
-            triangles = repair_stl_mesh(triangles)
-            logger.info("Repaired mesh (winding, inversion, normals)")
-
             if simplify is not None:
                 triangles = simplify_stl_mesh(triangles, simplify)
+
+            # triangles = repair_stl_mesh(triangles)
+            # logger.info("Repaired mesh (winding, inversion, normals)")
 
             node = stl_to_geomnode(triangles, name=str(stl_path))
             self.model = self.render.attach_new_node(node)
