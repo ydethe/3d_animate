@@ -27,6 +27,7 @@ CMakeCache.txt
 CMakeFiles
 Makefile
 *.cmake
+build/
 
 # Test binary, built with `go test -c`
 *.test
