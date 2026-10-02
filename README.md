@@ -117,6 +117,7 @@ required.
 | `--fps` | `30` | Frames per second for video output |
 | `--width` | `1920` | Video width in pixels |
 | `--height` | `1080` | Video height in pixels |
+| `--up-axis` | `zp` | Model's up axis and rotation sign (`xp`/`xm`/`yp`/`ym`/`zp`/`zm`, where `p`=+90° and `m`=−90°); the model is rotated so the result is Z-up and spins around Z |
 
 ## License
 

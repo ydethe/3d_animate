@@ -1,3 +1,4 @@
+from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
@@ -7,6 +8,17 @@ from .renderer import STLViewer
 from .utils import _parse_hex_color
 
 app = typer.Typer(help="Spin a 3D model with optional wireframe rendering.")
+
+
+class UpAxis(str, Enum):
+    # <axis><sign>: the axis to bring up to Z, and the sign of the rotation
+    # (p = +90°, m = −90°; zp = no rotation, zm = 180° flip).
+    xp = "xp"
+    xm = "xm"
+    yp = "yp"
+    ym = "ym"
+    zp = "zp"
+    zm = "zm"
 
 
 @app.command()
@@ -57,6 +69,16 @@ def main(
             max=1.0,
         ),
     ] = None,
+    up_axis: Annotated[
+        UpAxis,
+        typer.Option(
+            case_sensitive=False,
+            help=(
+                "the model's up axis and rotation sign (p=+90°, m=-90°); the model is rotated so"
+                " the result is Z-up and spins around Z"
+            ),
+        ),
+    ] = UpAxis.zp,
 ) -> None:
     if simplify is not None and not (0.0 < simplify <= 1.0):
         raise typer.BadParameter("--simplify must be in the range (0, 1]", param_hint="--simplify")
@@ -77,6 +99,7 @@ def main(
         width=width,
         height=height,
         simplify=simplify,
+        up_axis=up_axis.value,
     )
     viewer.run()
 

@@ -39,6 +39,19 @@ loadPrcFileData("", "audio-library-name null")
 Vec3 = tuple[float, float, float]
 Triangle = tuple[Vec3, list[Vec3]]
 
+# How much to rotate a model so its up axis ends up along Panda3D's own Z-up.
+# The letter picks the axis (X → roll, Y → pitch) and the p/m suffix the sign
+# of the rotation (p = +90°, m = −90°). Z is already up, so zp is identity and
+# zm flips the model 180°.
+_UP_AXIS_HPR: dict[str, Vec3] = {
+    "xp": (0.0, 0.0, 90.0),
+    "xm": (0.0, 0.0, -90.0),
+    "yp": (0.0, 90.0, 0.0),
+    "ym": (0.0, -90.0, 0.0),
+    "zp": (0.0, 0.0, 0.0),
+    "zm": (0.0, 180.0, 0.0),
+}
+
 
 # --------------------------------------------------------------------------- #
 # Application
@@ -57,6 +70,7 @@ class STLViewer(ShowBase):
         width: int = 1920,
         height: int = 1080,
         simplify: float | None = None,
+        up_axis: str = "zp",
     ) -> None:
         self._offline = output is not None
 
@@ -71,6 +85,7 @@ class STLViewer(ShowBase):
         self.set_background_color(*bg_color)
         self.speed = speed
         self.paused = False
+        self._up_hpr = _UP_AXIS_HPR[up_axis.lower()]
 
         # STL has no Panda3D loader, so parse it ourselves. Every other format
         # goes through Panda3D's loader (Assimp / egg / bam / glTF), which also
@@ -105,6 +120,7 @@ class STLViewer(ShowBase):
                     "Extracted %d triangles from %s for wireframe", len(triangles), stl_path
                 )
 
+        self.model.set_hpr(*self._up_hpr)
         self._center_and_scale(self.model)
 
         self.disable_mouse()
@@ -119,6 +135,7 @@ class STLViewer(ShowBase):
                 sys.exit("--wireframe could not obtain mesh geometry for this file.")
             outline_node = build_facet_outline_geomnode(triangles, name=str(stl_path) + "_outline")
             self.outline = self.render.attach_new_node(outline_node)
+            self.outline.set_hpr(*self._up_hpr)
             self._center_and_scale(self.outline)
             self.outline.set_color(Vec4(*edge_color, 1))
             self.outline.set_render_mode_thickness(2)

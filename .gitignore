@@ -22,6 +22,12 @@ output/
 *.fbx
 *.stl
 *.mov
+build/
+3d_animate
+CMakeCache.txt
+CMakeFiles
+Makefile
+*.cmake
 
 # Test binary, built with `go test -c`
 *.test
